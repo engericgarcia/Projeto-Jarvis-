@@ -144,12 +144,27 @@ function lerCorpo(req) {
   });
 }
 
+// Arquivos servidos como estão. Lista fechada de propósito: este servidor
+// executa comandos, não convém deixá-lo servir caminho arbitrário.
+const ESTATICOS = {
+  '/detector-worklet.js': ['detector-worklet.js', 'application/javascript; charset=utf-8'],
+  '/testes': ['testes.html', 'text/html; charset=utf-8'],
+  '/testes.html': ['testes.html', 'text/html; charset=utf-8'],
+};
+
 const servidor = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
       const html = await readFile(join(AQUI, 'ouvinte.html'));
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(html);
+    }
+
+    if (req.method === 'GET' && ESTATICOS[req.url]) {
+      const [arquivo, tipo] = ESTATICOS[req.url];
+      const conteudo = await readFile(join(AQUI, arquivo));
+      res.writeHead(200, { 'content-type': tipo });
+      return res.end(conteudo);
     }
 
     if (req.method === 'GET' && req.url === '/config') {
@@ -203,5 +218,6 @@ servidor.listen(PORTA, '127.0.0.1', () => {
   console.log('Jarvis — ouvido no navegador');
   console.log(`  config: ${CONFIG}`);
   if (SIMULAR) console.log('  modo simulação: nada será executado de verdade');
-  console.log(`  abra: http://127.0.0.1:${PORTA}`);
+  console.log(`  abra:   http://127.0.0.1:${PORTA}`);
+  console.log(`  testes: http://127.0.0.1:${PORTA}/testes`);
 });

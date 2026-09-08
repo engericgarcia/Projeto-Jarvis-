@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis — testes do detector</title>
+<style>
+  :root { color-scheme: dark; --ciano: #35e0ff; --ok: #4ee39a; --erro: #ff6b6b; --apagado: #5d8ba3; }
+  body {
+    margin: 0; padding: 32px 22px 60px; background: #02080e; color: #cfeefb;
+    font: 13px/1.6 ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 16px; font-weight: 500; letter-spacing: .3em; color: #a8f2ff; margin: 0 0 6px; }
+  p.sub { color: var(--apagado); margin: 0 0 26px; }
+  #resumo { border: 1px solid rgba(53,224,255,.22); padding: 14px 16px; margin-bottom: 20px; letter-spacing: .08em; }
+  #resumo.ok { border-color: rgba(78,227,154,.5); color: var(--ok); }
+  #resumo.falhou { border-color: rgba(255,107,107,.5); color: var(--erro); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .22em;
+       text-transform: uppercase; color: var(--ciano); padding: 0 10px 9px 0; }
+  td { padding: 7px 10px 7px 0; border-top: 1px dashed rgba(53,224,255,.13); vertical-align: top; }
+  td.marca { width: 22px; }
+  .ok { color: var(--ok); } .erro { color: var(--erro); }
+  .apagado { color: var(--apagado); }
+  .grupo td { border-top: 1px solid rgba(53,224,255,.25); padding-top: 18px;
+              font-size: 10px; letter-spacing: .22em; text-transform: uppercase; color: var(--ciano); }
+</style>
+</head>
+<body>
+<main>
+  <h1>TESTES DO DETECTOR</h1>
+  <p class="sub">
+    Áudio sintético alimentado no mesmo <code>detector-worklet.js</code> que a
+    página principal usa. Sem microfone: cada cenário é renderizado offline.
+  </p>
+  <div id="resumo">rodando…</div>
+  <table>
+    <thead><tr><th></th><th>cenário</th><th>esperado</th><th>obtido</th></tr></thead>
+    <tbody id="linhas"></tbody>
+  </table>
+</main>
+
+<script type="module">
+const TA = 48000;
+
+// Constrói um trecho de áudio e devolve os gestos que o detector reconheceu.
+async function rodar({ palmas = [], maxPalmas = 4, ajustes = {}, ruido = 0.0008, som = null, aoIniciar = null }) {
+  const duracao = 6;
+  const ctx = new OfflineAudioContext(1, TA * duracao, TA);
+  await ctx.audioWorklet.addModule('/detector-worklet.js');
+  const no = new AudioWorkletNode(ctx, 'detector-palmas', {
+    processorOptions: { ajustes: { janelaMaxMs: 600, ...ajustes }, maxPalmas },
+  });
+  if (aoIniciar) aoIniciar(no);
+
+  const buffer = ctx.createBuffer(1, TA * duracao, TA);
+  const d = buffer.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * ruido;
+  if (som) som(d, TA);
+  for (const t of palmas) {                       // palma: estalo de banda larga
+    const s = Math.round(t * TA);
+    for (let i = 0; i < 3000; i++) d[s + i] += (Math.random() * 2 - 1) * 0.9 * Math.exp(-i / 700);
+  }
+
+  const fonte = ctx.createBufferSource();
+  fonte.buffer = buffer;
+  fonte.connect(no);
+  no.connect(ctx.destination);
+
+  const gestos = [];
+  no.port.onmessage = ({ data }) => { if (data.tipo === 'gesto') gestos.push(`GESTO(${data.palmas})`); };
+  fonte.start();
+  await ctx.startRendering();
+  await new Promise((r) => setTimeout(r, 150));   // deixa as mensagens chegarem
+  return gestos.join(', ') || '(nada)';
+}
+
+// n palmas espaçadas de `passo` segundos, começando em 1 s.
+const ritmo = (n, passo = 0.35) => Array.from({ length: n }, (_, i) => 1.0 + i * passo);
+
+// ---------------------------------------------------------------- sons que não são palma
+const fala = (d, ta) => {
+  for (const inicio of [1.0, 1.35, 1.7]) {
+    const s = Math.round(inicio * ta);
+    for (let i = 0; i < ta * 0.28; i++) {
+      const t = i / ta;
+      const env = Math.min(1, t / 0.03) * Math.min(1, (0.28 - t) / 0.05);
+      d[s + i] += env * 0.5 * (Math.sin(2*Math.PI*130*t) + 0.6*Math.sin(2*Math.PI*260*t) + 0.3*Math.sin(2*Math.PI*520*t));
+    }
+  }
+};
+const batidaGrave = (d, ta) => {
+  for (const inicio of [1.0, 1.35, 1.7, 2.05]) {
+    const s = Math.round(inicio * ta);
+    for (let i = 0; i < 4000; i++) d[s + i] += 0.9 * Math.exp(-i / 900) * Math.sin(2*Math.PI*80*(i/ta));
+  }
+};
+const ruidoContinuo = (d, ta) => { const s = ta; for (let i = 0; i < ta * 1.5; i++) d[s + i] += (Math.random()*2-1) * 0.35; };
+const musicaComKick = (d, ta) => {
+  for (let k = 0; k < 6; k++) {
+    const s = Math.round((0.8 + k * 0.4) * ta);
+    for (let i = 0; i < 6000; i++) d[s + i] += 0.8 * Math.exp(-i / 1500) * Math.sin(2*Math.PI*60*(i/ta));
+    for (let i = 0; i < ta * 0.4; i++) d[s + i] += 0.12 * Math.sin(2*Math.PI*440*(i/ta));
+  }
+};
+const digitacao = (d, ta) => {
+  for (let k = 0; k < 12; k++) {
+    const s = Math.round((0.9 + k * 0.13) * ta);
+    for (let i = 0; i < 900; i++) d[s + i] += (Math.random()*2-1) * 0.06 * Math.exp(-i / 250);
+  }
+};
+
+// ---------------------------------------------------------------- cenários
+const CENARIOS = [
+  ['Reconhece os gestos', [
+    ['2 palmas',                          { palmas: ritmo(2) },            'GESTO(2)'],
+    ['3 palmas',                          { palmas: ritmo(3) },            'GESTO(3)'],
+    ['4 palmas',                          { palmas: ritmo(4) },            'GESTO(4)'],
+    ['4 palmas rápidas (200 ms)',         { palmas: ritmo(4, 0.20) },      'GESTO(4)'],
+    ['4 palmas lentas (500 ms)',          { palmas: ritmo(4, 0.50) },      'GESTO(4)'],
+    ['2 palmas lentas (500 ms)',          { palmas: ritmo(2, 0.50) },      'GESTO(2)'],
+    ['ritmo irregular (300/550/250 ms)',  { palmas: [1.0, 1.30, 1.85, 2.10] }, 'GESTO(4)'],
+    ['3 palmas com ruído de fundo alto',  { palmas: ritmo(3), ruido: 0.02 }, 'GESTO(3)'],
+    ['2 palmas quando o gesto máximo é 2', { palmas: ritmo(2), maxPalmas: 2 }, 'GESTO(2)'],
+  ]],
+  ['Não agrupa o que não é gesto', [
+    ['1 palma sozinha',                   { palmas: ritmo(1) },            '(nada)'],
+    ['palmas espaçadas demais (700 ms)',  { palmas: ritmo(4, 0.70) },      '(nada)'],
+    ['duas palmas separadas por 1,5 s',   { palmas: [0.8, 2.3] },          '(nada)'],
+  ]],
+  ['Não confunde com outros sons', [
+    ['fala alta, vogais sustentadas',     { som: fala },                   '(nada)'],
+    ['batidas graves na mesa',            { som: batidaGrave },            '(nada)'],
+    ['ruído contínuo (secador)',          { som: ruidoContinuo },          '(nada)'],
+    ['música com kick a cada 400 ms',     { som: musicaComKick },          '(nada)'],
+    ['digitação no teclado',              { som: digitacao },              '(nada)'],
+  ]],
+  ['Ajuste de sensibilidade ao vivo', [
+    ['limiar impossível bloqueia tudo',
+      { palmas: ritmo(4), aoIniciar: (no) => no.port.postMessage({ ajustes: { limiarPicoDb: -3 } }) }, '(nada)'],
+    ['limiar generoso volta a reconhecer',
+      { palmas: ritmo(4), aoIniciar: (no) => no.port.postMessage({ ajustes: { limiarPicoDb: -50 } }) }, 'GESTO(4)'],
+  ]],
+];
+
+const linhas = document.getElementById('linhas');
+let total = 0, falhas = 0;
+
+for (const [grupo, casos] of CENARIOS) {
+  const cabecalho = linhas.insertRow();
+  cabecalho.className = 'grupo';
+  const celula = cabecalho.insertCell();
+  celula.colSpan = 4;
+  celula.textContent = grupo;
+
+  for (const [nome, entrada, esperado] of casos) {
+    const obtido = await rodar(entrada);
+    const passou = obtido === esperado;
+    total++;
+    if (!passou) falhas++;
+    const linha = linhas.insertRow();
+    linha.insertCell().outerHTML = `<td class="marca ${passou ? 'ok' : 'erro'}">${passou ? '✓' : '✗'}</td>`;
+    linha.insertCell().textContent = nome;
+    linha.insertCell().outerHTML = `<td class="apagado">${esperado}</td>`;
+    linha.insertCell().outerHTML = `<td class="${passou ? '' : 'erro'}">${obtido}</td>`;
+  }
+}
+
+const resumo = document.getElementById('resumo');
+resumo.className = falhas ? 'falhou' : 'ok';
+resumo.textContent = falhas
+  ? `${falhas} de ${total} cenários falharam`
+  : `${total} cenários, todos passaram`;
+</script>
+</body>
+</html>

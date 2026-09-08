@@ -102,6 +102,20 @@ de ruído em tracejado — dá para ver se a palma cruzou a linha. Se as palmas 
 pegam, olhe o pico que aparece no registro e baixe o **limiar** até um pouco
 abaixo dele. Se dispara sozinho, suba o **salto** ou os **agudos**.
 
+## Testes
+
+```bash
+./iniciar.sh
+```
+
+e abra `http://127.0.0.1:4321/testes`.
+
+A suíte alimenta áudio sintético — palmas, fala, batida grave, ruído contínuo,
+música com kick, digitação — no mesmo `detector-worklet.js` que a página
+principal usa, renderizado offline, sem microfone. São 19 cenários cobrindo o
+que deve disparar, o que não deve agrupar e o que não pode ser confundido com
+palma. Rode depois de mexer no detector.
+
 ## Versão nativa (em segundo plano, sem navegador)
 
 Existe uma implementação em Swift em [`ouvido/`](ouvido/) — mesma lógica de
@@ -146,19 +160,22 @@ dispara na segunda palma, sem espera.
 As palmas do mesmo gesto podem estar entre 130 ms e 600 ms uma da outra —
 ritmo de palma normal cabe folgado nessa faixa.
 
-Verificado com áudio sintético, 15 cenários: dispara certo para 2, 3 e 4
-palmas em ritmo rápido, lento e irregular, inclusive com ruído de fundo alto;
-ignora palma isolada e palmas espaçadas demais; e não reage a fala alta,
-batida grave na mesa, ruído contínuo, música com kick forte nem digitação.
+Tudo isso é verificável: `/testes` roda 19 cenários de áudio sintético e
+mostra o resultado — 2, 3 e 4 palmas em ritmo rápido, lento e irregular,
+inclusive com ruído de fundo alto; palma isolada e palmas espaçadas demais
+não agrupam; fala alta, batida grave, ruído contínuo, música com kick e
+digitação não disparam nada.
 
 ## Estrutura
 
 ```
-config/acoes.json      gestos e ações (fonte da verdade das duas versões)
-navegador/servidor.mjs servidor local: executa ações, lê o Spotify, grava ajustes
-navegador/ouvinte.html HUD e detector de palmas em AudioWorklet
-ouvido/Sources/        versão nativa em Swift
-scripts/               instalação do LaunchAgent
+config/acoes.json             gestos e ações (fonte da verdade das duas versões)
+navegador/servidor.mjs        servidor local: ações, Spotify, gravação de ajustes
+navegador/ouvinte.html        o HUD
+navegador/detector-worklet.js o detector, carregado pelo HUD e pelos testes
+navegador/testes.html         suíte de áudio sintético
+ouvido/Sources/               versão nativa em Swift
+scripts/                      instalação do LaunchAgent
 ```
 
 ## Próximos passos
