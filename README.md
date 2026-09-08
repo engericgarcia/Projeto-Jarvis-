@@ -1,0 +1,137 @@
+# Jarvis
+
+Assistente para Mac acionado por **palmas**. Duas palmas abrem uma coisa,
+três palmas abrem outra — você define no `config/acoes.json`.
+
+## Começar agora (sem instalar nada)
+
+```bash
+./iniciar.sh
+```
+
+Abre `http://127.0.0.1:4321`. Clique em **Ativar microfone**, permita o acesso
+e bata palmas. Deixe a aba aberta — a detecção roda na thread de áudio e
+continua funcionando com a aba em segundo plano.
+
+O microfone fica no navegador; quem executa as ações no Mac é o servidor Node
+local (só escuta em `127.0.0.1`).
+
+Para ver o que aconteceria sem abrir nada de verdade:
+
+```bash
+JARVIS_SIMULAR=1 ./iniciar.sh
+```
+
+## Configurar os gestos
+
+Tudo vive em [`config/acoes.json`](config/acoes.json). Editou, salvou, valeu —
+não precisa reiniciar nada.
+
+```json
+{
+  "gestos": {
+    "2": {
+      "descricao": "Abrir Spotify",
+      "acoes": [{ "tipo": "abrir_app", "alvo": "Spotify" }]
+    }
+  }
+}
+```
+
+Tipos de ação disponíveis:
+
+| tipo | o que faz | exemplo de `alvo` |
+|---|---|---|
+| `abrir_app` | abre um aplicativo | `"Spotify"` |
+| `ativar_app` | abre e traz para frente | `"WhatsApp"` |
+| `abrir_url` | abre um link no navegador padrão | `"https://gmail.com"` |
+| `abrir_arquivo` | abre arquivo ou pasta | `"~/Projetos"` |
+| `atalho` | roda um Atalho do app Atalhos | `"Modo Foco"` |
+| `applescript` | executa AppleScript | `"set volume output volume 30"` |
+| `tecla` | manda uma tecla pro sistema | `"keystroke \"h\" using command down"` |
+| `falar` | fala em voz alta | `"Bom dia"` |
+| `som` | toca um som do sistema | `"Tink"` |
+| `shell` | roda um comando | `"pmset displaysleepnow"` |
+
+Chaves extras: `voz` (voz do `say`, padrão `Luciana`) e `confirmacao`
+(ação disparada antes de qualquer gesto — por padrão um bipe).
+
+> `shell` e `applescript` executam o que estiver escrito no arquivo. Como o
+> servidor só aceita conexões de `127.0.0.1`, isso fica restrito à sua máquina.
+
+## Ajustar a sensibilidade
+
+Em `ajustes`, dentro do mesmo JSON:
+
+| campo | efeito |
+|---|---|
+| `limiarPicoDb` | nível mínimo da palma. Mais negativo = mais sensível |
+| `saltoOnsetDb` | quanto a palma precisa saltar acima do ruído do ambiente |
+| `razaoAgudosMin` | quanto de agudo o som precisa ter (separa palma de batida grave) |
+| `decaimentoDb` | queda exigida depois do pico (separa palma de fala e música) |
+| `janelaMaxMs` | intervalo máximo entre as palmas do mesmo gesto |
+| `esperaPosGestoMs` | pausa após disparar, para não ouvir a própria confirmação |
+
+A página mostra nível, piso de ruído e agudos ao vivo. Se as palmas não pegam,
+olhe o pico que aparece no registro e baixe `limiarPicoDb` até um pouco abaixo
+dele. Se dispara sozinho, suba `saltoOnsetDb` ou `razaoAgudosMin`.
+
+## Versão nativa (em segundo plano, sem navegador)
+
+Existe uma implementação em Swift em [`ouvido/`](ouvido/) — mesma lógica de
+detecção, mesmo `acoes.json`, rodando como app de fundo sem aba aberta.
+
+**Ela ainda não compila neste Mac.** As Command Line Tools estão com
+instalações misturadas (2023 + 2024 + 2025): o SDK foi construído com
+`swiftlang-6.0.3.1.5` e o compilador instalado é o `6.0.3.1.10`, então nem
+`import Foundation` passa. Para consertar:
+
+```bash
+sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install
+```
+
+Depois disso:
+
+```bash
+bash ouvido/build.sh                      # gera build/Jarvis.app
+./build/Jarvis.app/Contents/MacOS/jarvis-ouvido --debug   # calibrar
+bash scripts/instalar-launchagent.sh      # subir sozinho no login
+```
+
+Opções: `--debug` (níveis ao vivo), `--listar`, `--testar 2`, `--config <arquivo>`.
+
+O binário mora dentro de um `.app` de propósito: o macOS concede permissão de
+microfone a aplicativos, não a executáveis soltos — assim o Jarvis aparece com
+nome próprio em *Privacidade e Segurança → Microfone*.
+
+## Como a detecção funciona
+
+Uma palma tem três marcas que a separam de fala, música e porta batendo:
+
+1. **ataque abrupto** — o nível salta ~14 dB acima do piso de ruído em poucos ms;
+2. **decaimento curto** — cai 9 dB em ~130 ms (fala e música sustentam);
+3. **energia em agudos** — é estalo de banda larga, não um "tum" grave.
+
+Só conta como palma quando as três acontecem juntas. Palmas confirmadas são
+agrupadas por proximidade no tempo: se o maior gesto configurado é o de 3
+palmas, o de 2 espera a janela fechar antes de disparar; se o maior é o de 2,
+dispara na segunda palma, sem espera.
+
+Verificado com áudio sintético: dispara para 2 e 3 palmas, ignora palma
+isolada, palmas rápidas demais ou distantes demais, e não reage a fala alta,
+batida grave, ruído contínuo nem música com kick forte.
+
+## Estrutura
+
+```
+config/acoes.json      gestos e ações (fonte da verdade das duas versões)
+navegador/servidor.mjs servidor local que executa as ações
+navegador/ouvinte.html detector de palmas em AudioWorklet
+ouvido/Sources/        versão nativa em Swift
+scripts/               instalação do LaunchAgent
+```
+
+## Próximos passos
+
+- Wake word "Jarvis" com reconhecimento de fala local do macOS (`SFSpeechRecognizer`)
+- Cérebro híbrido: intenções simples resolvidas localmente, o resto via Claude

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis — ouvido</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px; font: 15px/1.5 -apple-system, system-ui, sans-serif;
+    background: #0e1116; color: #e6edf3; display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 620px; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: #8b949e; margin: 0 0 28px; font-size: 14px; }
+  .cartao { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  button {
+    font: inherit; font-weight: 550; color: #fff; background: #1f6feb; border: 0;
+    border-radius: 8px; padding: 10px 18px; cursor: pointer;
+  }
+  button:hover { background: #388bfd; }
+  button.secundario { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 5px 12px; font-size: 13px; font-weight: 400; }
+  button.secundario:hover { background: #30363d; }
+  .medidor { position: relative; height: 26px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+  #barra { position: absolute; inset: 0 auto 0 0; width: 0%; background: linear-gradient(90deg, #238636, #d29922 72%, #da3633 90%); transition: width .05s linear; }
+  #piso { position: absolute; top: 0; bottom: 0; width: 2px; background: #58a6ff; }
+  .numeros { display: flex; gap: 20px; margin-top: 10px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8b949e; }
+  .numeros b { color: #e6edf3; font-weight: 550; }
+  .gesto { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #21262d; }
+  .gesto:last-child { border-bottom: 0; }
+  .gesto .qtd { font-size: 18px; width: 42px; flex-shrink: 0; }
+  .gesto .desc { flex: 1; }
+  #registro { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 190px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+  #registro li { padding: 3px 0; border-bottom: 1px solid #21262d; color: #8b949e; }
+  #registro li.destaque { color: #7ee787; }
+  #registro li .hora { color: #6e7681; margin-right: 8px; }
+  .aviso { background: #1c1a11; border: 1px solid #3d3620; color: #d5b169; border-radius: 8px; padding: 12px 14px; font-size: 13px; }
+  .oculto { display: none; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8b949e; margin: 0 0 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Jarvis</h1>
+  <p class="sub">Bata palmas para disparar as ações configuradas.</p>
+
+  <div class="cartao" id="cartaoInicio">
+    <button id="ativar">Ativar microfone</button>
+    <p class="sub" style="margin: 14px 0 0">
+      O navegador vai pedir permissão. Deixe esta aba aberta — a detecção continua
+      mesmo com a aba em segundo plano.
+    </p>
+  </div>
+
+  <div class="cartao oculto" id="cartaoNivel">
+    <h2>Nível do microfone</h2>
+    <div class="medidor"><div id="barra"></div><div id="piso"></div></div>
+    <div class="numeros">
+      <span>nível <b id="vNivel">—</b></span>
+      <span>piso <b id="vPiso">—</b></span>
+      <span>agudos <b id="vAgudos">—</b></span>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h2>Gestos</h2>
+    <div id="gestos"><p class="sub" style="margin:0">carregando…</p></div>
+  </div>
+
+  <div class="cartao">
+    <h2>Registro</h2>
+    <ul id="registro"><li>aguardando ativação do microfone</li></ul>
+  </div>
+</main>
+
+<script type="module">
+// O detector roda em um AudioWorklet (thread de áudio): continua funcionando
+// com a aba em segundo plano, ao contrário de timers e requestAnimationFrame.
+// A lógica é a mesma da versão Swift: ataque abrupto + decaimento curto +
+// energia em agudos = palma.
+const codigoWorklet = `
+class DetectorPalmas extends AudioWorkletProcessor {
+  constructor(opcoes) {
+    super();
+    const o = opcoes.processorOptions || {};
+    this.a = Object.assign({
+      limiarPicoDb: -32, saltoOnsetDb: 14, razaoAgudosMin: 0.25, decaimentoDb: 9,
+      msParaDecair: 130, refratarioMs: 130, janelaMinMs: 90, janelaMaxMs: 700,
+      esperaPosGestoMs: 1800
+    }, o.ajustes || {});
+    this.maxPalmas = o.maxPalmas || 2;
+
+    this.hop = 256;
+    this.buffer = new Float32Array(this.hop);
+    this.preenchido = 0;
+
+    const corte = 2000, rc = 1 / (2 * Math.PI * corte), dt = 1 / sampleRate;
+    this.alfaHP = rc / (rc + dt);
+    this.entradaAnterior = 0; this.saidaAnterior = 0;
+
+    this.relogio = 0;
+    this.piso = -60;
+    this.silencioAte = 0.6;
+    this.estado = 'ocioso';
+    this.inicioOnset = 0; this.pico = 0;
+    this.ultimaPalma = -1;
+    this.palmas = [];
+    this.contador = 0;
+  }
+
+  process(entradas) {
+    const canal = entradas[0] && entradas[0][0];
+    if (!canal) return true;
+    for (let i = 0; i < canal.length; i++) {
+      this.buffer[this.preenchido++] = canal[i];
+      if (this.preenchido === this.hop) { this.processarJanela(); this.preenchido = 0; }
+    }
+    return true;
+  }
+
+  processarJanela() {
+    let somaTotal = 0, somaAgudos = 0;
+    for (let i = 0; i < this.hop; i++) {
+      const x = this.buffer[i];
+      const agudo = this.alfaHP * (this.saidaAnterior + x - this.entradaAnterior);
+      this.saidaAnterior = agudo; this.entradaAnterior = x;
+      somaTotal += x * x; somaAgudos += agudo * agudo;
+    }
+    const rms = Math.sqrt(somaTotal / this.hop);
+    const rmsAgudos = Math.sqrt(somaAgudos / this.hop);
+    const db = 20 * Math.log10(rms + 1e-9);
+    const razaoAgudos = rmsAgudos / (rms + 1e-9);
+
+    this.relogio += this.hop / sampleRate;
+
+    if (db > this.piso) this.piso += (db - this.piso) * 0.01;
+    else this.piso += (db - this.piso) * 0.15;
+    if (this.piso < -75) this.piso = -75;
+
+    if (++this.contador % 8 === 0) {
+      this.port.postMessage({ tipo: 'nivel', db, piso: this.piso, agudos: razaoAgudos });
+    }
+    if (this.relogio <= this.silencioAte) return;
+
+    const a = this.a;
+    if (this.estado === 'ocioso') {
+      const saltou = db > this.piso + a.saltoOnsetDb;
+      const alto = db > a.limiarPicoDb;
+      const estalado = razaoAgudos > a.razaoAgudosMin;
+      const livre = (this.relogio - this.ultimaPalma) * 1000 > a.refratarioMs;
+      if (saltou && alto && estalado && livre) {
+        this.estado = 'verificando'; this.inicioOnset = this.relogio; this.pico = db;
+      }
+    } else {
+      if (db > this.pico) this.pico = db;
+      if ((this.relogio - this.inicioOnset) * 1000 >= a.msParaDecair) {
+        if (this.pico - db >= a.decaimentoDb) this.confirmarPalma(this.inicioOnset, this.pico);
+        this.estado = 'ocioso';
+      }
+    }
+
+    if (this.palmas.length && (this.relogio - this.palmas[this.palmas.length - 1]) * 1000 > a.janelaMaxMs) {
+      this.dispararSequencia();
+    }
+  }
+
+  confirmarPalma(instante, pico) {
+    this.ultimaPalma = this.relogio;
+    const ultima = this.palmas[this.palmas.length - 1];
+    if (ultima !== undefined && (instante - ultima) * 1000 > this.a.janelaMaxMs) this.palmas = [];
+    this.palmas.push(instante);
+    this.port.postMessage({ tipo: 'palma', indice: this.palmas.length, pico });
+    if (this.palmas.length >= this.maxPalmas) this.dispararSequencia();
+  }
+
+  dispararSequencia() {
+    const quantidade = this.palmas.length;
+    this.palmas = [];
+    if (quantidade < 2) return;
+    this.estado = 'ocioso';
+    this.silencioAte = this.relogio + this.a.esperaPosGestoMs / 1000;
+    this.port.postMessage({ tipo: 'gesto', palmas: quantidade });
+  }
+}
+registerProcessor('detector-palmas', DetectorPalmas);
+`;
+
+// Exposto para poder testar o detector sem microfone (áudio sintético).
+window.codigoWorklet = codigoWorklet;
+
+const $ = (id) => document.getElementById(id);
+
+function anotar(texto, destaque = false) {
+  const li = document.createElement('li');
+  if (destaque) li.className = 'destaque';
+  li.innerHTML = `<span class="hora">${new Date().toLocaleTimeString('pt-BR')}</span>`;
+  li.append(texto);
+  const lista = $('registro');
+  if (lista.children.length === 1 && lista.children[0].textContent.includes('aguardando')) lista.innerHTML = '';
+  lista.prepend(li);
+  while (lista.children.length > 60) lista.lastChild.remove();
+}
+
+let config = { gestos: {}, ajustes: {} };
+
+async function carregarConfig() {
+  config = await (await fetch('/config')).json();
+  const area = $('gestos');
+  area.innerHTML = '';
+  const chaves = Object.keys(config.gestos).sort();
+  if (!chaves.length) { area.innerHTML = '<p class="sub" style="margin:0">nenhum gesto configurado</p>'; return; }
+  for (const chave of chaves) {
+    const linha = document.createElement('div');
+    linha.className = 'gesto';
+    linha.innerHTML = `<span class="qtd">${'👏'.repeat(Math.min(Number(chave), 3))}</span>
+      <span class="desc"><b>${chave} palmas</b> — ${config.gestos[chave]}</span>`;
+    const botao = document.createElement('button');
+    botao.className = 'secundario';
+    botao.textContent = 'testar';
+    botao.onclick = () => enviarGesto(Number(chave), true);
+    linha.append(botao);
+    area.append(linha);
+  }
+}
+
+async function enviarGesto(palmas, manual = false) {
+  try {
+    const r = await fetch('/gesto', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ palmas }),
+    });
+    const dados = await r.json();
+    anotar(`${manual ? 'teste — ' : ''}${palmas} palmas → ${dados.descricao ?? dados.mensagem}`, true);
+  } catch (erro) {
+    anotar(`erro ao falar com o servidor: ${erro.message}`);
+  }
+}
+
+$('ativar').onclick = async () => {
+  try {
+    // Desliga o processamento do navegador: cancelamento de eco e controle
+    // automático de ganho achatam justamente o pico curto da palma.
+    const fluxo = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    const contexto = new AudioContext();
+    await contexto.resume();
+    const url = URL.createObjectURL(new Blob([codigoWorklet], { type: 'application/javascript' }));
+    await contexto.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+
+    const maxPalmas = Math.max(2, ...Object.keys(config.gestos).map(Number));
+    const no = new AudioWorkletNode(contexto, 'detector-palmas', {
+      processorOptions: { ajustes: config.ajustes, maxPalmas },
+    });
+    contexto.createMediaStreamSource(fluxo).connect(no);
+    // Saída mudo só para o grafo continuar puxando áudio pelo worklet.
+    const mudo = contexto.createGain();
+    mudo.gain.value = 0;
+    no.connect(mudo).connect(contexto.destination);
+
+    no.port.onmessage = ({ data }) => {
+      if (data.tipo === 'nivel') {
+        const pct = (v) => Math.max(0, Math.min(100, ((v + 70) / 70) * 100));
+        $('barra').style.width = pct(data.db) + '%';
+        $('piso').style.left = pct(data.piso) + '%';
+        $('vNivel').textContent = data.db.toFixed(1) + ' dB';
+        $('vPiso').textContent = data.piso.toFixed(1) + ' dB';
+        $('vAgudos').textContent = data.agudos.toFixed(2);
+      } else if (data.tipo === 'palma') {
+        anotar(`palma #${data.indice} (pico ${data.pico.toFixed(1)} dB)`);
+      } else if (data.tipo === 'gesto') {
+        enviarGesto(data.palmas);
+      }
+    };
+
+    $('cartaoInicio').classList.add('oculto');
+    $('cartaoNivel').classList.remove('oculto');
+    anotar(`ouvindo em ${Math.round(contexto.sampleRate)} Hz`, true);
+  } catch (erro) {
+    anotar(`não consegui acessar o microfone: ${erro.message}`);
+  }
+};
+
+carregarConfig();
+</script>
+</body>
+</html>

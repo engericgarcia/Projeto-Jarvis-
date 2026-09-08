@@ -1,0 +1,12 @@
+# Compilado — gerado por ouvido/build.sh
+build/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Config pessoal, se você quiser manter a sua fora do repositório:
+# descomente a linha abaixo e guarde a sua em ~/.config/jarvis/acoes.json
+# config/acoes.json

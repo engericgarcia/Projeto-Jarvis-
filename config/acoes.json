@@ -1,0 +1,32 @@
+{
+  "voz": "Luciana",
+
+  "confirmacao": { "tipo": "som", "alvo": "Tink" },
+
+  "gestos": {
+    "2": {
+      "descricao": "Abrir Spotify",
+      "acoes": [
+        { "tipo": "abrir_app", "alvo": "Spotify" }
+      ]
+    },
+    "3": {
+      "descricao": "Modo trabalho",
+      "acoes": [
+        { "tipo": "abrir_app", "alvo": "Visual Studio Code" },
+        { "tipo": "abrir_app", "alvo": "Safari" },
+        { "tipo": "falar", "alvo": "Modo trabalho ativado" }
+      ]
+    }
+  },
+
+  "ajustes": {
+    "limiarPicoDb": -32,
+    "saltoOnsetDb": 14,
+    "razaoAgudosMin": 0.25,
+    "decaimentoDb": 9,
+    "janelaMinMs": 90,
+    "janelaMaxMs": 700,
+    "esperaPosGestoMs": 1800
+  }
+}
