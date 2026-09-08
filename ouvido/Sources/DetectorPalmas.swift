@@ -144,13 +144,19 @@ final class DetectorPalmas {
         }
 
         // A janela do gesto fechou sem palma nova: dispara o que se acumulou.
-        if let ultima = palmas.last, (relogio - ultima) * 1000 > ajustes.janelaMaxMs {
+        // Nunca fecha com uma palma em verificação: ela ainda não entrou na
+        // sequência, e fechar aqui quebraria gestos de palmas mais espaçadas.
+        if case .ocioso = estado,
+           let ultima = palmas.last,
+           (relogio - ultima) * 1000 > ajustes.janelaMaxMs {
             dispararSequencia()
         }
     }
 
     private func confirmarPalma(em instante: Double, pico: Float) {
-        ultimaPalma = relogio
+        // Medido a partir do ataque, não da confirmação: a confirmação chega
+        // msParaDecair depois, e contar dali dobraria a zona morta entre palmas.
+        ultimaPalma = instante
 
         // Palma isolada demais para pertencer à sequência anterior: recomeça.
         if let ultima = palmas.last, (instante - ultima) * 1000 > ajustes.janelaMaxMs {

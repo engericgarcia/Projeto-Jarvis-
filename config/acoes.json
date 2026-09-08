@@ -1,32 +1,45 @@
 {
   "voz": "Luciana",
-
-  "confirmacao": { "tipo": "som", "alvo": "Tink" },
-
+  "confirmacao": {
+    "tipo": "som",
+    "alvo": "Tink"
+  },
   "gestos": {
     "2": {
-      "descricao": "Abrir Spotify",
+      "descricao": "Spotify tocando Highway to Hell",
       "acoes": [
-        { "tipo": "abrir_app", "alvo": "Spotify" }
+        {
+          "tipo": "applescript",
+          "alvo": "if not (application \"Spotify\" is running) then\n\ttell application \"Spotify\" to activate\n\trepeat 40 times\n\t\tdelay 0.25\n\t\tif application \"Spotify\" is running then exit repeat\n\tend repeat\nend if\nrepeat 12 times\n\ttry\n\t\ttell application \"Spotify\"\n\t\t\tactivate\n\t\t\tplay track \"spotify:track:2zYzyRzz6pRmhPzyfMEC8s\"\n\t\tend tell\n\t\texit repeat\n\ton error\n\t\tdelay 0.5\n\tend try\nend repeat"
+        }
       ]
     },
     "3": {
-      "descricao": "Modo trabalho",
+      "descricao": "Play / pause",
       "acoes": [
-        { "tipo": "abrir_app", "alvo": "Visual Studio Code" },
-        { "tipo": "abrir_app", "alvo": "Safari" },
-        { "tipo": "falar", "alvo": "Modo trabalho ativado" }
+        {
+          "tipo": "applescript",
+          "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to playpause"
+        }
+      ]
+    },
+    "4": {
+      "descricao": "Próxima faixa",
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to next track"
+        }
       ]
     }
   },
-
   "ajustes": {
     "limiarPicoDb": -32,
     "saltoOnsetDb": 14,
     "razaoAgudosMin": 0.25,
     "decaimentoDb": 9,
     "janelaMinMs": 90,
-    "janelaMaxMs": 700,
+    "janelaMaxMs": 600,
     "esperaPosGestoMs": 1800
   }
 }

@@ -22,6 +22,19 @@ Para ver o que aconteceria sem abrir nada de verdade:
 JARVIS_SIMULAR=1 ./iniciar.sh
 ```
 
+## Gestos atuais
+
+| gesto | o que faz |
+|---|---|
+| 👏👏 | abre o Spotify e toca *Highway to Hell* |
+| 👏👏👏 | play / pause |
+| 👏👏👏👏 | próxima faixa |
+
+Só o gesto mais longo dispara na hora. Os menores esperam a janela de
+agrupamento fechar (600 ms) antes de disparar, para não serem confundidos com
+o começo de um gesto maior. Por isso não vale a pena passar de quatro palmas:
+cada nível a mais atrasa todos os outros.
+
 ## Configurar os gestos
 
 Tudo vive em [`config/acoes.json`](config/acoes.json). Editou, salvou, valeu —
@@ -36,6 +49,13 @@ não precisa reiniciar nada.
     }
   }
 }
+```
+
+Para tocar uma música específica, use um AppleScript com a URI da faixa — o ID
+sai da própria URL do Spotify (`open.spotify.com/track/<ID>`):
+
+```applescript
+tell application "Spotify" to play track "spotify:track:2zYzyRzz6pRmhPzyfMEC8s"
 ```
 
 Tipos de ação disponíveis:
@@ -117,9 +137,13 @@ agrupadas por proximidade no tempo: se o maior gesto configurado é o de 3
 palmas, o de 2 espera a janela fechar antes de disparar; se o maior é o de 2,
 dispara na segunda palma, sem espera.
 
-Verificado com áudio sintético: dispara para 2 e 3 palmas, ignora palma
-isolada, palmas rápidas demais ou distantes demais, e não reage a fala alta,
-batida grave, ruído contínuo nem música com kick forte.
+As palmas do mesmo gesto podem estar entre 130 ms e 600 ms uma da outra —
+ritmo de palma normal cabe folgado nessa faixa.
+
+Verificado com áudio sintético, 15 cenários: dispara certo para 2, 3 e 4
+palmas em ritmo rápido, lento e irregular, inclusive com ruído de fundo alto;
+ignora palma isolada e palmas espaçadas demais; e não reage a fala alta,
+batida grave na mesa, ruído contínuo, música com kick forte nem digitação.
 
 ## Estrutura
 

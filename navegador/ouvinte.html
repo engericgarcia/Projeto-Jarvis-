@@ -160,13 +160,18 @@ class DetectorPalmas extends AudioWorkletProcessor {
       }
     }
 
-    if (this.palmas.length && (this.relogio - this.palmas[this.palmas.length - 1]) * 1000 > a.janelaMaxMs) {
+    // Nunca fecha a janela com uma palma em verificação: ela ainda não entrou
+    // na sequência, e fechar aqui quebraria gestos de palmas mais espaçadas.
+    if (this.estado === 'ocioso' && this.palmas.length &&
+        (this.relogio - this.palmas[this.palmas.length - 1]) * 1000 > a.janelaMaxMs) {
       this.dispararSequencia();
     }
   }
 
   confirmarPalma(instante, pico) {
-    this.ultimaPalma = this.relogio;
+    // Medido a partir do ataque, não da confirmação: a confirmação chega
+    // msParaDecair depois, e contar dali dobraria a zona morta entre palmas.
+    this.ultimaPalma = instante;
     const ultima = this.palmas[this.palmas.length - 1];
     if (ultima !== undefined && (instante - ultima) * 1000 > this.a.janelaMaxMs) this.palmas = [];
     this.palmas.push(instante);
