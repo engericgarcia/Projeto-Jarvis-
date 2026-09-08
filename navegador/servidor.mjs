@@ -7,7 +7,7 @@
 
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -82,6 +82,56 @@ async function dispararGesto(palmas) {
   return { ok: true, descricao: gesto.descricao ?? null };
 }
 
+// Faixas aceitas para cada ajuste. Serve de validação e também alimenta os
+// sliders da página, para os dois lados nunca discordarem.
+const LIMITES = {
+  limiarPicoDb:     { min: -60, max: -5,   passo: 1,    unidade: 'dB' },
+  saltoOnsetDb:     { min: 4,   max: 40,   passo: 1,    unidade: 'dB' },
+  razaoAgudosMin:   { min: 0,   max: 1,    passo: 0.01, unidade: '' },
+  decaimentoDb:     { min: 2,   max: 30,   passo: 1,    unidade: 'dB' },
+  janelaMinMs:      { min: 40,  max: 400,  passo: 10,   unidade: 'ms' },
+  janelaMaxMs:      { min: 200, max: 1500, passo: 25,   unidade: 'ms' },
+  esperaPosGestoMs: { min: 200, max: 5000, passo: 100,  unidade: 'ms' },
+};
+
+function sanearAjustes(recebidos) {
+  const limpos = {};
+  for (const [chave, valor] of Object.entries(recebidos ?? {})) {
+    const limite = LIMITES[chave];
+    if (!limite) continue;                       // ignora chave desconhecida
+    const n = Number(valor);
+    if (!Number.isFinite(n)) continue;
+    limpos[chave] = Math.min(limite.max, Math.max(limite.min, n));
+  }
+  return limpos;
+}
+
+// Lê o estado do Spotify sem abri-lo: sem a guarda de "is running", o
+// AppleScript lançaria o app a cada consulta.
+const SCRIPT_SPOTIFY = `if application "Spotify" is running then
+	tell application "Spotify"
+		try
+			return (player state as string) & "|" & (name of current track) & "|" & (artist of current track)
+		on error
+			return (player state as string) & "||"
+		end try
+	end tell
+else
+	return "fechado"
+end if`;
+
+function estadoSpotify() {
+  return new Promise((resolver) => {
+    execFile('/usr/bin/osascript', ['-e', SCRIPT_SPOTIFY], { timeout: 4000 }, (erro, saida) => {
+      if (erro) return resolver({ aberto: false });
+      const texto = String(saida).trim();
+      if (texto === 'fechado') return resolver({ aberto: false });
+      const [estado, faixa, artista] = texto.split('|');
+      resolver({ aberto: true, tocando: estado === 'playing', faixa: faixa || null, artista: artista || null });
+    });
+  });
+}
+
 function lerCorpo(req) {
   return new Promise((resolver, rejeitar) => {
     let dados = '';
@@ -108,7 +158,7 @@ const servidor = createServer(async (req, res) => {
         Object.entries(config.gestos ?? {}).map(([k, g]) => [k, g.descricao ?? '(sem descrição)'])
       );
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ gestos: resumo, ajustes: config.ajustes ?? {} }));
+      return res.end(JSON.stringify({ gestos: resumo, ajustes: config.ajustes ?? {}, limites: LIMITES }));
     }
 
     if (req.method === 'POST' && req.url === '/gesto') {
@@ -121,6 +171,23 @@ const servidor = createServer(async (req, res) => {
       const resultado = await dispararGesto(palmas);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify(resultado));
+    }
+
+    if (req.method === 'GET' && req.url === '/spotify') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify(await estadoSpotify()));
+    }
+
+    if (req.method === 'POST' && req.url === '/ajustes') {
+      const recebidos = JSON.parse((await lerCorpo(req)) || '{}');
+      const limpos = sanearAjustes(recebidos);
+      const config = await lerConfig();
+      config.ajustes = { ...(config.ajustes ?? {}), ...limpos };
+      await writeFile(CONFIG, JSON.stringify(config, null, 2) + '\n', 'utf8');
+      console.log(`[${new Date().toLocaleTimeString('pt-BR')}] ajustes salvos: ` +
+        Object.entries(limpos).map(([k, v]) => `${k}=${v}`).join(' '));
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: true, ajustes: config.ajustes }));
     }
 
     res.writeHead(404).end('não encontrado');

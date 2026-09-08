@@ -92,9 +92,15 @@ Em `ajustes`, dentro do mesmo JSON:
 | `janelaMaxMs` | intervalo máximo entre as palmas do mesmo gesto |
 | `esperaPosGestoMs` | pausa após disparar, para não ouvir a própria confirmação |
 
-A página mostra nível, piso de ruído e agudos ao vivo. Se as palmas não pegam,
-olhe o pico que aparece no registro e baixe `limiarPicoDb` até um pouco abaixo
-dele. Se dispara sozinho, suba `saltoOnsetDb` ou `razaoAgudosMin`.
+Não precisa editar o arquivo à mão para isso: a página tem um slider para cada
+um desses campos. O que você mexe vale na hora, sem reiniciar nada, e o botão
+**Gravar no arquivo** persiste em `acoes.json`. O servidor valida cada valor
+contra uma faixa aceita antes de gravar.
+
+O anel central mostra o nível ao vivo, com o limiar marcado em laranja e o piso
+de ruído em tracejado — dá para ver se a palma cruzou a linha. Se as palmas não
+pegam, olhe o pico que aparece no registro e baixe o **limiar** até um pouco
+abaixo dele. Se dispara sozinho, suba o **salto** ou os **agudos**.
 
 ## Versão nativa (em segundo plano, sem navegador)
 
@@ -149,8 +155,8 @@ batida grave na mesa, ruído contínuo, música com kick forte nem digitação.
 
 ```
 config/acoes.json      gestos e ações (fonte da verdade das duas versões)
-navegador/servidor.mjs servidor local que executa as ações
-navegador/ouvinte.html detector de palmas em AudioWorklet
+navegador/servidor.mjs servidor local: executa ações, lê o Spotify, grava ajustes
+navegador/ouvinte.html HUD e detector de palmas em AudioWorklet
 ouvido/Sources/        versão nativa em Swift
 scripts/               instalação do LaunchAgent
 ```
