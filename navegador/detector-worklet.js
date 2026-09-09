@@ -14,6 +14,7 @@ class DetectorPalmas extends AudioWorkletProcessor {
     const o = opcoes.processorOptions || {};
     this.a = Object.assign({
       limiarPicoDb: -32, saltoOnsetDb: 14, razaoAgudosMin: 0.25, decaimentoDb: 9,
+      preSilencioDb: 20,
       msParaDecair: 130, refratarioMs: 130, janelaMinMs: 90, janelaMaxMs: 700,
       esperaPosGestoMs: 1800
     }, o.ajustes || {});
@@ -33,6 +34,11 @@ class DetectorPalmas extends AudioWorkletProcessor {
     this.alfaHP = rc / (rc + dt);
     this.entradaAnterior = 0; this.saidaAnterior = 0;
 
+    // Histórico curto de níveis, para olhar o que havia ANTES do ataque.
+    this.historico = new Float32Array(64).fill(-70);
+    this.hIndice = 0;
+    this.preAoOnset = -70;
+
     this.relogio = 0;
     this.piso = -60;
     this.silencioAte = 0.6;
@@ -41,6 +47,17 @@ class DetectorPalmas extends AudioWorkletProcessor {
     this.ultimaPalma = -1;
     this.palmas = [];
     this.contador = 0;
+  }
+
+  // Nível médio entre `inicio` e `fim` hops atrás. Um hop = 256 amostras.
+  mediaAnterior(inicio, fim) {
+    let soma = 0, n = 0;
+    const tamanho = this.historico.length;
+    for (let k = inicio; k <= fim; k++) {
+      soma += this.historico[(this.hIndice - k + tamanho * 2) % tamanho];
+      n++;
+    }
+    return soma / n;
   }
 
   process(entradas) {
@@ -75,7 +92,11 @@ class DetectorPalmas extends AudioWorkletProcessor {
     if (++this.contador % 6 === 0) {
       this.port.postMessage({ tipo: 'nivel', db, piso: this.piso, agudos: razaoAgudos });
     }
-    if (this.relogio <= this.silencioAte) return;
+    if (this.relogio <= this.silencioAte) {
+      this.historico[this.hIndice] = db;
+      this.hIndice = (this.hIndice + 1) % this.historico.length;
+      return;
+    }
 
     const a = this.a;
     if (this.estado === 'ocioso') {
@@ -84,12 +105,21 @@ class DetectorPalmas extends AudioWorkletProcessor {
       const estalado = razaoAgudos > a.razaoAgudosMin;
       const livre = (this.relogio - this.ultimaPalma) * 1000 > a.refratarioMs;
       if (saltou && alto && estalado && livre) {
+        // Janela de ~40 ms a ~160 ms antes do ataque: o que havia logo antes.
+        this.preAoOnset = this.mediaAnterior(8, 30);
         this.estado = 'verificando'; this.inicioOnset = this.relogio; this.pico = db;
       }
     } else {
       if (db > this.pico) this.pico = db;
       if ((this.relogio - this.inicioOnset) * 1000 >= a.msParaDecair) {
-        if (this.pico - db >= a.decaimentoDb) this.confirmarPalma(this.inicioOnset, this.pico);
+        const decaiu = this.pico - db >= a.decaimentoDb;
+        // Palma sai do silêncio; plosiva de fala sai do meio da própria fala.
+        // Só a palma que ABRE a sequência precisa provar isso: as seguintes
+        // vêm logo depois de outra palma, não do silêncio — e é justamente
+        // por isso que a fala não consegue iniciar uma sequência.
+        const abreSequencia = this.palmas.length === 0;
+        const vinhaDoSilencio = !abreSequencia || (this.pico - this.preAoOnset >= a.preSilencioDb);
+        if (decaiu && vinhaDoSilencio) this.confirmarPalma(this.inicioOnset, this.pico);
         this.estado = 'ocioso';
       }
     }
@@ -100,6 +130,9 @@ class DetectorPalmas extends AudioWorkletProcessor {
         (this.relogio - this.palmas[this.palmas.length - 1]) * 1000 > a.janelaMaxMs) {
       this.dispararSequencia();
     }
+
+    this.historico[this.hIndice] = db;
+    this.hIndice = (this.hIndice + 1) % this.historico.length;
   }
 
   confirmarPalma(instante, pico) {

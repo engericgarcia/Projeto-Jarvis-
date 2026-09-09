@@ -59,9 +59,11 @@ async function rodar({ palmas = [], maxPalmas = 4, ajustes = {}, ruido = 0.0008,
   const d = buffer.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * ruido;
   if (som) som(d, TA);
-  for (const t of palmas) {                       // palma: estalo de banda larga
+  // Palma: estalo de banda larga com decaimento de ~46 ms. O valor importa —
+  // com decaimento curto demais o teste fica fácil e deixa passar bug.
+  for (const t of palmas) {
     const s = Math.round(t * TA);
-    for (let i = 0; i < 3000; i++) d[s + i] += (Math.random() * 2 - 1) * 0.9 * Math.exp(-i / 700);
+    for (let i = 0; i < 6000; i++) d[s + i] += (Math.random() * 2 - 1) * 0.9 * Math.exp(-i / 2200);
   }
 
   const fonte = ctx.createBufferSource();
@@ -97,6 +99,38 @@ const batidaGrave = (d, ta) => {
     for (let i = 0; i < 4000; i++) d[s + i] += 0.9 * Math.exp(-i / 900) * Math.sin(2*Math.PI*80*(i/ta));
   }
 };
+// Sílaba "ta": estalo curto de banda larga seguido de vogal harmônica. É a
+// plosiva que engana o detector — tem ataque e agudos, como uma palma.
+const silaba = (d, ta, inicio, forca = 1) => {
+  const s = Math.round(inicio * ta);
+  for (let i = 0; i < ta * 0.012; i++) {
+    d[s + i] += (Math.random() * 2 - 1) * 0.55 * forca * Math.exp(-i / (ta * 0.0025));
+  }
+  const desloca = Math.round(ta * 0.015);
+  for (let i = 0; i < ta * 0.2; i++) {
+    const t = i / ta;
+    const env = Math.min(1, t / 0.02) * Math.min(1, (0.2 - t) / 0.05);
+    d[s + desloca + i] += env * 0.35 * forca *
+      (Math.sin(2*Math.PI*120*t) + 0.5*Math.sin(2*Math.PI*240*t)
+       + 0.25*Math.sin(2*Math.PI*480*t) + 0.12*Math.sin(2*Math.PI*1800*t));
+  }
+};
+const falaComPlosivas = (d, ta) => { for (const t of [1.0, 1.26, 1.52, 1.85, 2.12, 2.38]) silaba(d, ta, t); };
+const falaAlta = (d, ta) => { for (const t of [1.0, 1.24, 1.48, 1.8, 2.05, 2.3]) silaba(d, ta, t, 1.7); };
+const duasSilabasIsoladas = (d, ta) => { silaba(d, ta, 1.0, 1.6); silaba(d, ta, 1.35, 1.6); };
+
+// Fala e música em nível de fundo. Uma palma a um metro do microfone é umas
+// quatro dezenas de dB mais alta que conversa ou música ambiente — os casos de
+// fronteira só fazem sentido com essa proporção.
+const falaDeFundo = (d, ta) => { for (const t of [0.9, 1.16, 1.42, 1.7, 1.96]) silaba(d, ta, t, 0.12); };
+const musicaDeFundo = (d, ta) => {
+  for (let k = 0; k < 8; k++) {
+    const s = Math.round((0.6 + k * 0.4) * ta);
+    for (let i = 0; i < 6000; i++) d[s + i] += 0.12 * Math.exp(-i / 1500) * Math.sin(2*Math.PI*60*(i/ta));
+    for (let i = 0; i < ta * 0.4; i++) d[s + i] += 0.03 * Math.sin(2*Math.PI*440*(i/ta));
+  }
+};
+
 const ruidoContinuo = (d, ta) => { const s = ta; for (let i = 0; i < ta * 1.5; i++) d[s + i] += (Math.random()*2-1) * 0.35; };
 const musicaComKick = (d, ta) => {
   for (let k = 0; k < 6; k++) {
@@ -131,11 +165,27 @@ const CENARIOS = [
     ['duas palmas separadas por 1,5 s',   { palmas: [0.8, 2.3] },          '(nada)'],
   ]],
   ['Não confunde com outros sons', [
+    ['fala com plosivas (ta-ta-ta)',      { som: falaComPlosivas },        '(nada)'],
+    ['fala alta e perto do microfone',    { som: falaAlta },               '(nada)'],
+    ['duas sílabas fortes e isoladas',    { som: duasSilabasIsoladas },    '(nada)'],
     ['fala alta, vogais sustentadas',     { som: fala },                   '(nada)'],
     ['batidas graves na mesa',            { som: batidaGrave },            '(nada)'],
     ['ruído contínuo (secador)',          { som: ruidoContinuo },          '(nada)'],
     ['música com kick a cada 400 ms',     { som: musicaComKick },          '(nada)'],
     ['digitação no teclado',              { som: digitacao },              '(nada)'],
+  ]],
+  ['Casos de fronteira', [
+    ['palmas enquanto se conversa',       { palmas: ritmo(2), som: falaDeFundo },     'GESTO(2)'],
+    ['palmas com música de fundo',        { palmas: ritmo(2), som: musicaDeFundo },   'GESTO(2)'],
+    ['palmas com ruído de fundo alto',    { palmas: ritmo(2), ruido: 0.02 },          'GESTO(2)'],
+  ]],
+  // Limitação conhecida, registrada de propósito: o critério de pré-silêncio
+  // exige que a palma se destaque do que veio antes. Som muito alto colado no
+  // microfone apaga essa diferença e as palmas deixam de ser reconhecidas.
+  // O ajuste "pré-silêncio" na interface é a válvula para esse caso.
+  ['Limitações conhecidas', [
+    ['música alta demais abafa as palmas', { palmas: ritmo(2), som: musicaComKick },  '(nada)'],
+    ['gritando junto ao microfone',        { palmas: ritmo(2), som: falaAlta },       '(nada)'],
   ]],
   ['Ajuste de sensibilidade ao vivo', [
     ['limiar impossível bloqueia tudo',

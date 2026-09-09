@@ -89,6 +89,7 @@ const LIMITES = {
   saltoOnsetDb:     { min: 4,   max: 40,   passo: 1,    unidade: 'dB' },
   razaoAgudosMin:   { min: 0,   max: 1,    passo: 0.01, unidade: '' },
   decaimentoDb:     { min: 2,   max: 30,   passo: 1,    unidade: 'dB' },
+  preSilencioDb:    { min: 0,   max: 45,   passo: 1,    unidade: 'dB' },
   janelaMinMs:      { min: 40,  max: 400,  passo: 10,   unidade: 'ms' },
   janelaMaxMs:      { min: 200, max: 1500, passo: 25,   unidade: 'ms' },
   esperaPosGestoMs: { min: 200, max: 5000, passo: 100,  unidade: 'ms' },

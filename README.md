@@ -89,6 +89,7 @@ Em `ajustes`, dentro do mesmo JSON:
 | `saltoOnsetDb` | quanto a palma precisa saltar acima do ruído do ambiente |
 | `razaoAgudosMin` | quanto de agudo o som precisa ter (separa palma de batida grave) |
 | `decaimentoDb` | queda exigida depois do pico (separa palma de fala e música) |
+| `preSilencioDb` | quanto a palma precisa superar o som que havia logo antes (separa palma de plosiva da fala) |
 | `janelaMaxMs` | intervalo máximo entre as palmas do mesmo gesto |
 | `esperaPosGestoMs` | pausa após disparar, para não ouvir a própria confirmação |
 
@@ -110,11 +111,18 @@ abaixo dele. Se dispara sozinho, suba o **salto** ou os **agudos**.
 
 e abra `http://127.0.0.1:4321/testes`.
 
-A suíte alimenta áudio sintético — palmas, fala, batida grave, ruído contínuo,
-música com kick, digitação — no mesmo `detector-worklet.js` que a página
-principal usa, renderizado offline, sem microfone. São 19 cenários cobrindo o
-que deve disparar, o que não deve agrupar e o que não pode ser confundido com
-palma. Rode depois de mexer no detector.
+A suíte alimenta áudio sintético — palmas, fala com plosivas, batida grave,
+ruído contínuo, música, digitação — no mesmo `detector-worklet.js` que a
+página principal usa, renderizado offline, sem microfone. São 27 cenários em
+seis grupos, incluindo as limitações conhecidas. Rode depois de mexer no
+detector.
+
+Os níveis relativos importam: uma palma a um metro do microfone é umas quatro
+dezenas de dB mais alta que conversa ou música ambiente, e os cenários
+respeitam essa proporção. Testar com fala no mesmo volume da palma dá falsa
+reprovação; testar com palma muito mais nítida que a realidade dá falsa
+aprovação — foi assim que a primeira versão da suíte deixou passar o problema
+das plosivas.
 
 ## Versão nativa (em segundo plano, sem navegador)
 
@@ -146,13 +154,23 @@ nome próprio em *Privacidade e Segurança → Microfone*.
 
 ## Como a detecção funciona
 
-Uma palma tem três marcas que a separam de fala, música e porta batendo:
+Uma palma tem quatro marcas que a separam de fala, música e porta batendo:
 
 1. **ataque abrupto** — o nível salta ~14 dB acima do piso de ruído em poucos ms;
 2. **decaimento curto** — cai 9 dB em ~130 ms (fala e música sustentam);
-3. **energia em agudos** — é estalo de banda larga, não um "tum" grave.
+3. **energia em agudos** — é estalo de banda larga, não um "tum" grave;
+4. **silêncio antes** — o pico supera em ~20 dB o nível dos 40–160 ms anteriores.
 
-Só conta como palma quando as três acontecem juntas. Palmas confirmadas são
+O quarto critério é o que separa palma de **fala**. As consoantes plosivas —
+o "p", o "t", o "k" — são estalos curtos e agudos, e passam pelos três
+primeiros critérios sem dificuldade. O que elas não têm é silêncio antes:
+saem do meio da sua própria voz. A palma sai do silêncio.
+
+Esse critério vale só para a palma que **abre** a sequência. As seguintes vêm
+logo depois de outra palma, não do silêncio — e é justamente por isso que a
+fala não consegue iniciar um gesto.
+
+Só conta como palma quando os quatro critérios acontecem juntos. Palmas confirmadas são
 agrupadas por proximidade no tempo: se o maior gesto configurado é o de 3
 palmas, o de 2 espera a janela fechar antes de disparar; se o maior é o de 2,
 dispara na segunda palma, sem espera.
@@ -160,11 +178,17 @@ dispara na segunda palma, sem espera.
 As palmas do mesmo gesto podem estar entre 130 ms e 600 ms uma da outra —
 ritmo de palma normal cabe folgado nessa faixa.
 
-Tudo isso é verificável: `/testes` roda 19 cenários de áudio sintético e
-mostra o resultado — 2, 3 e 4 palmas em ritmo rápido, lento e irregular,
-inclusive com ruído de fundo alto; palma isolada e palmas espaçadas demais
-não agrupam; fala alta, batida grave, ruído contínuo, música com kick e
-digitação não disparam nada.
+Tudo isso é verificável: `/testes` roda 27 cenários de áudio sintético e
+mostra o resultado — os gestos reconhecidos em ritmo rápido, lento e
+irregular; o que não deve agrupar; fala com plosivas, batida grave, ruído
+contínuo, música e digitação que não podem disparar nada; palmas por cima de
+conversa, música de fundo e ruído; e as limitações conhecidas.
+
+**Limitações conhecidas**, registradas como teste em vez de escondidas: som
+muito alto colado ao microfone — música no volume máximo, ou alguém gritando
+ao lado — apaga a diferença que o quarto critério mede, e as palmas deixam de
+ser reconhecidas. O ajuste **pré-silêncio** na interface é a válvula: baixe-o
+se o seu ambiente for barulhento, ao custo de mais risco de a fala disparar.
 
 ## Estrutura
 

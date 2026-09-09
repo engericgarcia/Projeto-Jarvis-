@@ -93,6 +93,7 @@ if let a = carregador.atual.ajustes {
     if let v = a.saltoOnsetDb      { detector.ajustes.saltoOnsetDb = v }
     if let v = a.razaoAgudosMin    { detector.ajustes.razaoAgudosMin = v }
     if let v = a.decaimentoDb      { detector.ajustes.decaimentoDb = v }
+    if let v = a.preSilencioDb     { detector.ajustes.preSilencioDb = v }
     if let v = a.janelaMinMs       { detector.ajustes.janelaMinMs = v }
     if let v = a.janelaMaxMs       { detector.ajustes.janelaMaxMs = v }
     if let v = a.esperaPosGestoMs  { detector.ajustes.esperaPosGestoMs = v }

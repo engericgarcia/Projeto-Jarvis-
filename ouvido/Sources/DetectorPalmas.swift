@@ -20,6 +20,10 @@ final class DetectorPalmas {
         var razaoAgudosMin: Float = 0.25
         /// Queda exigida depois do pico para confirmar que foi um estalo (dB).
         var decaimentoDb: Float = 9
+        /// Quanto o pico precisa superar o nível que havia ANTES do ataque (dB).
+        /// É o que separa palma de plosiva: a palma sai do silêncio, o "t" e o
+        /// "p" da fala saem do meio da própria fala.
+        var preSilencioDb: Float = 20
         /// Quando medir essa queda, contado a partir do ataque (ms).
         var msParaDecair: Double = 130
         /// Tempo morto após uma palma, para não contar o eco dela (ms).
@@ -52,6 +56,11 @@ final class DetectorPalmas {
     private var entradaAnterior: Float = 0
     private var saidaAnterior: Float = 0
 
+    // Histórico curto de níveis, para olhar o que havia antes do ataque.
+    private var historico = [Float](repeating: -70, count: 64)
+    private var hIndice = 0
+    private var preAoOnset: Float = -70
+
     private var acumulador: [Float] = []
     private var relogio: Double = 0          // segundos de áudio processados
     private var pisoRuido: Float = -60
@@ -73,6 +82,17 @@ final class DetectorPalmas {
         let dt = 1.0 / taxaAmostragem
         self.alfaHP = Float(rc / (rc + dt))
         self.acumulador.reserveCapacity(tamanhoHop * 4)
+    }
+
+    /// Nível médio entre `inicio` e `fim` janelas atrás.
+    private func mediaAnterior(_ inicio: Int, _ fim: Int) -> Float {
+        var soma: Float = 0
+        var n = 0
+        for k in inicio...fim {
+            soma += historico[((hIndice - k) % historico.count + historico.count) % historico.count]
+            n += 1
+        }
+        return soma / Float(n)
     }
 
     /// Recebe um bloco de áudio mono e o processa em janelas de tamanho fixo.
@@ -118,7 +138,11 @@ final class DetectorPalmas {
             aoAmostrar?(db, pisoRuido, razaoAgudos)
         }
 
-        guard relogio > silencioAte else { return }
+        guard relogio > silencioAte else {
+            historico[hIndice] = db
+            hIndice = (hIndice + 1) % historico.count
+            return
+        }
 
         switch estado {
         case .ocioso:
@@ -127,14 +151,24 @@ final class DetectorPalmas {
             let estalado = razaoAgudos > ajustes.razaoAgudosMin
             let livre = (relogio - ultimaPalma) * 1000 > ajustes.refratarioMs
             if saltou && alto && estalado && livre {
+                // Janela de ~40 ms a ~160 ms antes do ataque.
+                preAoOnset = mediaAnterior(8, 30)
                 estado = .verificando(inicio: relogio, pico: db)
             }
 
         case .verificando(let inicio, let pico):
             let picoAtualizado = max(pico, db)
             if (relogio - inicio) * 1000 >= ajustes.msParaDecair {
-                // Passou o tempo de observação: só é palma se já tiver caído.
-                if picoAtualizado - db >= ajustes.decaimentoDb {
+                // Passou o tempo de observação: só é palma se já tiver caído
+                // e se tiver vindo do silêncio, não do meio de uma fala.
+                // Só a palma que ABRE a sequência precisa provar que veio do
+                // silêncio: as seguintes vêm logo depois de outra palma — e é
+                // por isso que a fala não consegue iniciar uma sequência.
+                let decaiu = picoAtualizado - db >= ajustes.decaimentoDb
+                let abreSequencia = palmas.isEmpty
+                let vinhaDoSilencio = !abreSequencia
+                    || picoAtualizado - preAoOnset >= ajustes.preSilencioDb
+                if decaiu && vinhaDoSilencio {
                     confirmarPalma(em: inicio, pico: picoAtualizado)
                 }
                 estado = .ocioso
@@ -151,6 +185,9 @@ final class DetectorPalmas {
            (relogio - ultima) * 1000 > ajustes.janelaMaxMs {
             dispararSequencia()
         }
+
+        historico[hIndice] = db
+        hIndice = (hIndice + 1) % historico.count
     }
 
     private func confirmarPalma(em instante: Double, pico: Float) {

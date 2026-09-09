@@ -38,6 +38,7 @@
     "saltoOnsetDb": 14,
     "razaoAgudosMin": 0.25,
     "decaimentoDb": 9,
+    "preSilencioDb": 20,
     "janelaMinMs": 90,
     "janelaMaxMs": 600,
     "esperaPosGestoMs": 1800

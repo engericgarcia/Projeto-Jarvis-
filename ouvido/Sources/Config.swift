@@ -19,6 +19,7 @@ struct AjustesJSON: Codable {
     var saltoOnsetDb: Float?
     var razaoAgudosMin: Float?
     var decaimentoDb: Float?
+    var preSilencioDb: Float?
     var janelaMinMs: Double?
     var janelaMaxMs: Double?
     var esperaPosGestoMs: Double?
