@@ -28,12 +28,43 @@ JARVIS_SIMULAR=1 ./iniciar.sh
 |---|---|
 | 👏👏 | abre o Spotify e toca *Highway to Hell* |
 | 👏👏👏 | play / pause |
-| 👏👏👏👏 | próxima faixa |
+| 👏👏👏👏 | escuta um comando de voz |
 
 Só o gesto mais longo dispara na hora. Os menores esperam a janela de
 agrupamento fechar (600 ms) antes de disparar, para não serem confundidos com
 o começo de um gesto maior. Por isso não vale a pena passar de quatro palmas:
 cada nível a mais atrasa todos os outros.
+
+## Comandos de voz
+
+Quatro palmas abrem a escuta por 7 segundos. O anel fica âmbar, o que você
+fala aparece no centro, e ao terminar o comando é executado.
+
+| diga | e ele |
+|---|---|
+| "pausa", "silêncio" | pausa o Spotify |
+| "toca", "continua" | volta a tocar |
+| "próxima", "pula essa" | pula a faixa |
+| "anterior", "volta" | faixa anterior |
+| "highway to hell", "toca ac dc" | toca a música |
+| "aumenta o volume", "abaixa o volume" | mexe no volume do sistema |
+| "mudo", "tira o som" | alterna o mudo |
+| "abre o vs code", "abre o whatsapp", "abre o safari" | abre o app |
+| "modo trabalho" | abre VS Code e Safari |
+| "que horas são" | fala a hora |
+| "apaga a tela", "boa noite" | apaga o monitor |
+
+Não é um modelo de linguagem: é casamento de texto normalizado contra a lista
+de frases do `acoes.json`. Acento, maiúscula, pontuação e um "Jarvis" ou "por
+favor" no meio não atrapalham. O que não chegar perto de nenhum comando faz
+ele responder "não entendi" em vez de chutar. Para ensinar um comando novo,
+acrescente um item em `comandos` com as formas de dizer e as ações.
+
+> **Privacidade:** o reconhecimento de fala do navegador manda o áudio para
+> servidores da Apple/Google. Ele só liga quando um gesto pede e desliga
+> sozinho em 7 segundos — nunca fica escutando. Reconhecimento local e offline
+> depende da versão nativa (`SFSpeechRecognizer`), que precisa do Swift
+> funcionando.
 
 ## Configurar os gestos
 
@@ -105,11 +136,25 @@ abaixo dele. Se dispara sozinho, suba o **salto** ou os **agudos**.
 
 ## Testes
 
+O detector de palmas:
+
 ```bash
 ./iniciar.sh
 ```
 
 e abra `http://127.0.0.1:4321/testes`.
+
+O casamento dos comandos de voz, direto no terminal:
+
+```bash
+node testes/intencoes.mjs
+```
+
+São 35 casos rodando contra os comandos reais do `acoes.json` — frases exatas,
+variações naturais de fala, acentos, comando específico ganhando do genérico, e
+frases soltas que não podem virar comando. Serve de guarda contra conflito: se
+você acrescentar um comando cujas frases roubem o lugar de outro, um caso falha.
+
 
 A suíte alimenta áudio sintético — palmas, fala com plosivas, batida grave,
 ruído contínuo, música, digitação — no mesmo `detector-worklet.js` que a
@@ -197,12 +242,15 @@ config/acoes.json             gestos e ações (fonte da verdade das duas versõ
 navegador/servidor.mjs        servidor local: ações, Spotify, gravação de ajustes
 navegador/ouvinte.html        o HUD
 navegador/detector-worklet.js o detector, carregado pelo HUD e pelos testes
+navegador/intencoes.mjs       casamento de fala com os comandos
 navegador/testes.html         suíte de áudio sintético
+testes/intencoes.mjs          testes do casamento de intenção
 ouvido/Sources/               versão nativa em Swift
 scripts/                      instalação do LaunchAgent
 ```
 
 ## Próximos passos
 
-- Wake word "Jarvis" com reconhecimento de fala local do macOS (`SFSpeechRecognizer`)
-- Cérebro híbrido: intenções simples resolvidas localmente, o resto via Claude
+- Reconhecimento de fala local, sem mandar áudio para fora (`SFSpeechRecognizer`)
+- Wake word "Jarvis", para abrir a escuta sem bater palma
+- Cérebro híbrido: o que não casar com nenhum comando vai para a Claude

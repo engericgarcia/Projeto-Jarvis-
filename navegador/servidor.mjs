@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { casar } from './intencoes.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const PORTA = Number(process.env.PORT ?? 4321);
@@ -78,8 +79,13 @@ async function dispararGesto(palmas) {
   }
   console.log(`[${hora}] ${palmas} palmas → ${gesto.descricao ?? 'executando'}`);
   if (config.confirmacao) executarAcao(config.confirmacao, config);
-  for (const acao of gesto.acoes ?? []) executarAcao(acao, config);
-  return { ok: true, descricao: gesto.descricao ?? null };
+
+  // "escutar" não roda aqui: quem abre o microfone é a página. O servidor só
+  // avisa que este gesto pede escuta, e executa o resto normalmente.
+  const acoes = gesto.acoes ?? [];
+  const escutar = acoes.some((a) => a.tipo === 'escutar');
+  for (const acao of acoes) if (acao.tipo !== 'escutar') executarAcao(acao, config);
+  return { ok: true, descricao: gesto.descricao ?? null, escutar };
 }
 
 // Faixas aceitas para cada ajuste. Serve de validação e também alimenta os
@@ -174,7 +180,13 @@ const servidor = createServer(async (req, res) => {
         Object.entries(config.gestos ?? {}).map(([k, g]) => [k, g.descricao ?? '(sem descrição)'])
       );
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ gestos: resumo, ajustes: config.ajustes ?? {}, limites: LIMITES }));
+      const comandos = (config.comandos ?? []).map((c) => ({
+        descricao: c.descricao ?? '(sem descrição)',
+        frases: c.frases ?? [],
+      }));
+      return res.end(JSON.stringify({
+        gestos: resumo, comandos, ajustes: config.ajustes ?? {}, limites: LIMITES,
+      }));
     }
 
     if (req.method === 'POST' && req.url === '/gesto') {
@@ -187,6 +199,28 @@ const servidor = createServer(async (req, res) => {
       const resultado = await dispararGesto(palmas);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify(resultado));
+    }
+
+    if (req.method === 'POST' && req.url === '/comando') {
+      const corpo = JSON.parse((await lerCorpo(req)) || '{}');
+      const config = await lerConfig();
+      const achado = casar(corpo.texto, config.comandos);
+      const hora = new Date().toLocaleTimeString('pt-BR');
+
+      if (!achado) {
+        console.log(`[${hora}] ouvi "${corpo.texto}" — nenhum comando parecido`);
+        if (config.naoEntendi) executarAcao(config.naoEntendi, config);
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, texto: corpo.texto ?? '', mensagem: 'não entendi' }));
+      }
+
+      const { comando, pontuacao } = achado;
+      console.log(`[${hora}] ouvi "${corpo.texto}" → ${comando.descricao} (${pontuacao.toFixed(2)})`);
+      for (const acao of comando.acoes ?? []) executarAcao(acao, config);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        ok: true, texto: corpo.texto ?? '', descricao: comando.descricao ?? null, pontuacao,
+      }));
     }
 
     if (req.method === 'GET' && req.url === '/spotify') {

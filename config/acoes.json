@@ -24,15 +24,234 @@
       ]
     },
     "4": {
+      "descricao": "Escutar um comando de voz",
+      "acoes": [
+        {
+          "tipo": "escutar",
+          "alvo": ""
+        }
+      ]
+    }
+  },
+  "naoEntendi": {
+    "tipo": "falar",
+    "alvo": "Não entendi"
+  },
+  "comandos": [
+    {
       "descricao": "Próxima faixa",
+      "frases": [
+        "proxima",
+        "próxima faixa",
+        "pula",
+        "pula essa",
+        "pular"
+      ],
       "acoes": [
         {
           "tipo": "applescript",
           "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to next track"
         }
       ]
+    },
+    {
+      "descricao": "Faixa anterior",
+      "frases": [
+        "anterior",
+        "faixa anterior",
+        "volta",
+        "voltar"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to previous track"
+        }
+      ]
+    },
+    {
+      "descricao": "Pausar",
+      "frases": [
+        "pausa",
+        "pausar",
+        "pare",
+        "para a música",
+        "silêncio"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to pause"
+        }
+      ]
+    },
+    {
+      "descricao": "Continuar tocando",
+      "frases": [
+        "toca",
+        "tocar",
+        "continua",
+        "play"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "if application \"Spotify\" is running then tell application \"Spotify\" to play"
+        }
+      ]
+    },
+    {
+      "descricao": "Highway to Hell",
+      "frases": [
+        "highway to hell",
+        "toca highway to hell",
+        "toca ac dc",
+        "ac dc"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "if not (application \"Spotify\" is running) then\n\ttell application \"Spotify\" to activate\n\trepeat 40 times\n\t\tdelay 0.25\n\t\tif application \"Spotify\" is running then exit repeat\n\tend repeat\nend if\nrepeat 12 times\n\ttry\n\t\ttell application \"Spotify\"\n\t\t\tactivate\n\t\t\tplay track \"spotify:track:2zYzyRzz6pRmhPzyfMEC8s\"\n\t\tend tell\n\t\texit repeat\n\ton error\n\t\tdelay 0.5\n\tend try\nend repeat"
+        }
+      ]
+    },
+    {
+      "descricao": "Mudo / com som",
+      "frases": [
+        "mudo",
+        "muta",
+        "tira o som",
+        "sem som"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "set volume output muted (not (output muted of (get volume settings)))"
+        }
+      ]
+    },
+    {
+      "descricao": "Aumentar o volume",
+      "frases": [
+        "aumenta o volume",
+        "volume alto",
+        "mais alto",
+        "aumenta"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "set volume output volume ((output volume of (get volume settings)) + 12)"
+        }
+      ]
+    },
+    {
+      "descricao": "Abaixar o volume",
+      "frases": [
+        "abaixa o volume",
+        "volume baixo",
+        "mais baixo",
+        "abaixa"
+      ],
+      "acoes": [
+        {
+          "tipo": "applescript",
+          "alvo": "set volume output volume ((output volume of (get volume settings)) - 12)"
+        }
+      ]
+    },
+    {
+      "descricao": "Abrir o VS Code",
+      "frases": [
+        "abre o vs code",
+        "abre o código",
+        "vs code",
+        "abre o visual studio"
+      ],
+      "acoes": [
+        {
+          "tipo": "abrir_app",
+          "alvo": "Visual Studio Code"
+        }
+      ]
+    },
+    {
+      "descricao": "Abrir o WhatsApp",
+      "frases": [
+        "abre o whatsapp",
+        "whatsapp"
+      ],
+      "acoes": [
+        {
+          "tipo": "abrir_app",
+          "alvo": "WhatsApp"
+        }
+      ]
+    },
+    {
+      "descricao": "Abrir o Safari",
+      "frases": [
+        "abre o safari",
+        "abre o navegador"
+      ],
+      "acoes": [
+        {
+          "tipo": "abrir_app",
+          "alvo": "Safari"
+        }
+      ]
+    },
+    {
+      "descricao": "Modo trabalho",
+      "frases": [
+        "modo trabalho",
+        "modo de trabalho",
+        "hora de trabalhar"
+      ],
+      "acoes": [
+        {
+          "tipo": "abrir_app",
+          "alvo": "Visual Studio Code"
+        },
+        {
+          "tipo": "abrir_app",
+          "alvo": "Safari"
+        },
+        {
+          "tipo": "falar",
+          "alvo": "Modo trabalho"
+        }
+      ]
+    },
+    {
+      "descricao": "Dizer as horas",
+      "frases": [
+        "que horas são",
+        "que horas",
+        "me diz as horas"
+      ],
+      "acoes": [
+        {
+          "tipo": "shell",
+          "alvo": "say -v Luciana \"são $(date '+%H horas e %M minutos')\""
+        }
+      ]
+    },
+    {
+      "descricao": "Apagar a tela",
+      "frases": [
+        "apaga a tela",
+        "bloqueia a tela",
+        "boa noite"
+      ],
+      "acoes": [
+        {
+          "tipo": "shell",
+          "alvo": "pmset displaysleepnow"
+        }
+      ]
     }
-  },
+  ],
   "ajustes": {
     "limiarPicoDb": -32,
     "saltoOnsetDb": 14,

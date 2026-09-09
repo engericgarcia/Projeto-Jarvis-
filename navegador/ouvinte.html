@@ -94,6 +94,21 @@
     text-align: center; gap: 10px; pointer-events: none;
   }
   .centro .rotulo { font-size: 10px; letter-spacing: .3em; color: var(--apagado); }
+
+  /* Escuta de voz: o anel muda de cor para não haver dúvida do estado. */
+  body.escutando .arco-nivel { stroke: var(--alerta); filter: drop-shadow(0 0 9px rgba(255, 180, 84, .9)); }
+  body.escutando .estado { color: var(--alerta); }
+  body.escutando .estado::before { background: var(--alerta); box-shadow: 0 0 10px var(--alerta); }
+  body.escutando .centro .rotulo { color: var(--alerta); }
+  #transcricao {
+    font-size: 13px; color: var(--ciano-claro); max-width: 190px;
+    min-height: 40px; display: grid; place-content: center; line-height: 1.4;
+  }
+  #transcricao:empty::before { content: "…"; color: var(--apagado); }
+  .comando { display: flex; gap: 14px; padding: 7px 0; border-bottom: 1px dashed var(--linha); }
+  .comando:last-child { border-bottom: 0; }
+  .comando .desc { width: 168px; flex-shrink: 0; color: var(--texto); }
+  .comando .frases { color: var(--apagado); font-size: 12px; }
   .centro .valor {
     font-size: 30px; letter-spacing: .04em; color: var(--ciano-claro);
     text-shadow: 0 0 16px rgba(53, 224, 255, .6);
@@ -216,6 +231,10 @@
         <div class="valor" id="vNivel">—</div>
         <div class="pontos" id="pontos"></div>
       </div>
+      <div id="centroEscuta" class="oculto">
+        <div class="rotulo">ESCUTANDO</div>
+        <div id="transcricao"></div>
+      </div>
     </div>
   </section>
 
@@ -228,6 +247,15 @@
   <section class="painel">
     <h2>Gestos</h2>
     <div id="gestos"></div>
+  </section>
+
+  <section class="painel" id="painelComandos">
+    <h2>Comandos de voz</h2>
+    <div id="comandos"></div>
+    <div class="rodape-ajustes">
+      <button class="acao" id="falarAgora">Falar agora</button>
+      <span class="dica" style="margin:0" id="suporteVoz"></span>
+    </div>
   </section>
 
   <section class="painel oculto" id="painelSpotify">
@@ -337,6 +365,7 @@ async function carregarConfig() {
   config = await (await fetch('/config')).json();
   maxPalmas = Math.max(2, ...Object.keys(config.gestos).map(Number));
   montarGestos();
+  montarComandos();
   montarPontos();
   montarAjustes();
   marcar($('marcaLimiar'), config.ajustes.limiarPicoDb ?? -32, R - 16, R + 16);
@@ -358,6 +387,19 @@ function montarGestos() {
     botao.textContent = 'executar';
     botao.onclick = () => enviarGesto(Number(chave), true);
     linha.append(botao);
+    area.append(linha);
+  }
+}
+
+function montarComandos() {
+  const area = $('comandos');
+  area.innerHTML = '';
+  for (const c of config.comandos ?? []) {
+    const linha = document.createElement('div');
+    linha.className = 'comando';
+    // Mostra as duas primeiras formas de dizer; as outras funcionam igual.
+    linha.innerHTML = `<span class="desc">${c.descricao}</span>
+                       <span class="frases">"${c.frases.slice(0, 2).join('", "')}"</span>`;
     area.append(linha);
   }
 }
@@ -407,6 +449,82 @@ $('salvar').onclick = async () => {
   else anotar('não consegui gravar os ajustes');
 };
 
+// ------------------------------------------------------------ voz
+// O reconhecimento de fala do navegador manda o áudio para servidores da
+// Apple/Google. Só é ligado quando um gesto pede — nunca fica escutando.
+const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+const DURACAO_ESCUTA = 7000;
+let escutando = false;
+let reconhecedor = null;
+let cortarEscuta = null;
+
+$('suporteVoz').textContent = Reconhecimento
+  ? 'a escuta abre com o gesto configurado e fecha sozinha em 7 s'
+  : 'este navegador não tem reconhecimento de fala — tente no Chrome ou Safari';
+
+function iniciarEscuta() {
+  if (!Reconhecimento) { anotar('reconhecimento de fala indisponível neste navegador'); return; }
+  if (escutando) return;
+
+  escutando = true;
+  document.body.classList.add('escutando');
+  $('estado').textContent = 'ESCUTANDO';
+  $('centroAtivo').classList.add('oculto');
+  $('centroEscuta').classList.remove('oculto');
+  $('transcricao').textContent = '';
+
+  let dito = '';
+  reconhecedor = new Reconhecimento();
+  reconhecedor.lang = 'pt-BR';
+  reconhecedor.continuous = false;
+  reconhecedor.interimResults = true;
+
+  reconhecedor.onresult = (evento) => {
+    let parcial = '';
+    for (const resultado of evento.results) {
+      const texto = resultado[0].transcript;
+      if (resultado.isFinal) dito += texto; else parcial += texto;
+    }
+    $('transcricao').textContent = (dito + parcial).trim();
+  };
+  reconhecedor.onerror = (evento) => {
+    if (evento.error !== 'no-speech' && evento.error !== 'aborted') {
+      anotar(`erro no reconhecimento: ${evento.error}`);
+    }
+  };
+  reconhecedor.onend = () => {
+    clearTimeout(cortarEscuta);
+    encerrarEscuta(dito.trim());
+  };
+
+  try { reconhecedor.start(); } catch (erro) { anotar(`não consegui escutar: ${erro.message}`); encerrarEscuta(''); return; }
+  cortarEscuta = setTimeout(() => { try { reconhecedor.stop(); } catch {} }, DURACAO_ESCUTA);
+}
+
+async function encerrarEscuta(dito) {
+  escutando = false;
+  reconhecedor = null;
+  document.body.classList.remove('escutando');
+  $('estado').textContent = 'ONLINE';
+  $('centroEscuta').classList.add('oculto');
+  $('centroAtivo').classList.remove('oculto');
+
+  if (!dito) { anotar('não ouvi nada'); return; }
+  try {
+    const r = await fetch('/comando', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto: dito }),
+    });
+    const dados = await r.json();
+    anotar(dados.ok ? `"${dito}" → ${dados.descricao}` : `"${dito}" · não entendi`, dados.ok);
+    setTimeout(atualizarSpotify, 1600);
+  } catch (erro) {
+    anotar(`falha ao enviar o comando: ${erro.message}`);
+  }
+}
+
+$('falarAgora').onclick = () => iniciarEscuta();
+
 async function enviarGesto(palmas, manual = false) {
   try {
     const r = await fetch('/gesto', {
@@ -415,7 +533,9 @@ async function enviarGesto(palmas, manual = false) {
     });
     const dados = await r.json();
     anotar(`${manual ? 'manual · ' : ''}${palmas} palmas · ${dados.descricao ?? dados.mensagem}`, true);
-    setTimeout(atualizarSpotify, 1600);
+    // A confirmação sonora do gesto sairia por cima da fala; espera ela passar.
+    if (dados.escutar) setTimeout(iniciarEscuta, 400);
+    else setTimeout(atualizarSpotify, 1600);
   } catch (erro) {
     anotar(`falha ao falar com o servidor: ${erro.message}`);
   }
@@ -474,7 +594,9 @@ $('iniciar').onclick = async () => {
       } else if (data.tipo === 'sequencia') {
         pontos().forEach((p) => p.classList.remove('aceso'));
       } else if (data.tipo === 'gesto') {
-        enviarGesto(data.palmas);
+        // Durante a escuta o detector segue rodando, mas o gesto é ignorado:
+        // evita que uma palma no meio da frase dispare outra coisa.
+        if (!escutando) enviarGesto(data.palmas);
       }
     };
 
